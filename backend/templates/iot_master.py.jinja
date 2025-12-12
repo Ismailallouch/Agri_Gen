@@ -1,0 +1,130 @@
+# ============================================================
+# Agri-Gen IoT Firmware
+# Auto-generated for Cisco Packet Tracer SBC
+# ============================================================
+# Device: {{ device | upper }}
+# Action: {{ action }}
+{% if has_condition %}
+# Condition: {{ sensor }} {{ condition }} {{ threshold }}{{ unit }}
+{% endif %}
+# ============================================================
+
+from gpio import *
+from time import *
+
+# -------------------- PIN CONFIGURATION --------------------
+# Sensors
+PIN_TEMP = 0
+PIN_WATER = 1
+PIN_HUMID = 2
+
+# Actuators
+PIN_SPRINKLER = 3
+PIN_HEATER = 4
+PIN_FAN = 5
+PIN_SIREN = 6
+PIN_LIGHT = 7
+PIN_LCD = 8
+
+# Active pins for this script
+DEVICE_PIN = {{ device_pin }}  # {{ device | capitalize }}
+{% if sensor_pin is not none %}
+SENSOR_PIN = {{ sensor_pin }}  # {{ sensor | capitalize }} Sensor
+{% endif %}
+
+# -------------------- THRESHOLD SETTINGS --------------------
+{% if has_condition %}
+THRESHOLD = {{ threshold }}
+CHECK_INTERVAL = 2  # seconds between readings
+{% endif %}
+
+# -------------------- HELPER FUNCTIONS --------------------
+def read_sensor():
+    """Read value from {{ sensor if sensor else 'sensor' }}"""
+{% if sensor_pin is not none %}
+    value = analogRead(SENSOR_PIN)
+    return value
+{% else %}
+    return 0
+{% endif %}
+
+def control_device(state):
+    """Control {{ device }} - ON (1) or OFF (0)"""
+    if state:
+        customWrite(DEVICE_PIN, 1)
+        customWrite(PIN_LCD, "{{ device | upper }}: ON")
+        print("[{{ device | upper }}] Turned ON")
+    else:
+        customWrite(DEVICE_PIN, 0)
+        customWrite(PIN_LCD, "{{ device | upper }}: OFF")
+        print("[{{ device | upper }}] Turned OFF")
+
+def display_status(sensor_value):
+    """Display current status on LCD"""
+    msg = "{{ sensor | capitalize if sensor else 'Value' }}: " + str(sensor_value)
+    customWrite(PIN_LCD, msg)
+
+# -------------------- MAIN CONTROL LOOP --------------------
+def main():
+    """Main firmware loop"""
+    print("[Agri-Gen] Starting {{ device | capitalize }} controller...")
+    print("[Agri-Gen] Device Pin: " + str(DEVICE_PIN))
+{% if sensor_pin is not none %}
+    print("[Agri-Gen] Sensor Pin: " + str(SENSOR_PIN))
+{% endif %}
+    
+{% if has_condition %}
+    # Conditional control based on {{ sensor }} sensor
+    while True:
+        # Read sensor value
+        sensor_value = read_sensor()
+        print("[Sensor] {{ sensor | capitalize }}: " + str(sensor_value))
+        
+        # Check condition and control device
+        {% if condition == 'below' %}
+        if sensor_value < THRESHOLD:
+            print("[Action] {{ sensor | capitalize }} (" + str(sensor_value) + ") < " + str(THRESHOLD) + " -> ON")
+            control_device(1)
+        else:
+            print("[Action] {{ sensor | capitalize }} (" + str(sensor_value) + ") >= " + str(THRESHOLD) + " -> OFF")
+            control_device(0)
+        {% elif condition == 'above' %}
+        if sensor_value > THRESHOLD:
+            print("[Action] {{ sensor | capitalize }} (" + str(sensor_value) + ") > " + str(THRESHOLD) + " -> ON")
+            control_device(1)
+        else:
+            print("[Action] {{ sensor | capitalize }} (" + str(sensor_value) + ") <= " + str(THRESHOLD) + " -> OFF")
+            control_device(0)
+        {% else %}
+        if sensor_value == THRESHOLD:
+            control_device(1)
+        else:
+            control_device(0)
+        {% endif %}
+        
+        # Update display
+        display_status(sensor_value)
+        
+        # Wait before next reading
+        delay(CHECK_INTERVAL * 1000)
+{% else %}
+    # Direct control without condition
+    {% if action == 'turn_on' %}
+    print("[Action] Turning ON {{ device }}")
+    control_device(1)
+    {% elif action == 'turn_off' %}
+    print("[Action] Turning OFF {{ device }}")
+    control_device(0)
+    {% else %}
+    # Monitor mode
+    print("[Action] Monitoring {{ device }}")
+    while True:
+        sensor_value = read_sensor()
+        display_status(sensor_value)
+        delay(2000)
+    {% endif %}
+{% endif %}
+
+# -------------------- ENTRY POINT --------------------
+if __name__ == "__main__":
+    main()
