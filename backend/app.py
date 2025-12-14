@@ -50,7 +50,15 @@ def compile_endpoint():
                 "error": "Failed to extract intent from prompt"
             }), 500
         
-        # Step 2: Compile Python firmware using Jinja2
+        # Step 2: Check if the prompt is valid (related to agriculture/IoT)
+        if intent.get('is_valid') == False:
+            return jsonify({
+                "success": False,
+                "error": intent.get('error_message', "Cette demande n'est pas liée à l'automatisation IoT agricole."),
+                "is_invalid_prompt": True
+            }), 400
+        
+        # Step 3: Compile Python firmware using Jinja2
         firmware_code = compile_firmware(intent)
         
         return jsonify({

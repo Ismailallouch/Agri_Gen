@@ -361,16 +361,50 @@ Examples:
                                         )}
                                     </button>
 
-                                    {/* Error Display - Enhanced */}
+                                    {/* Error Display - Enhanced with better design */}
                                     {status === 'error' && (
-                                        <div className="mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30 backdrop-blur-sm">
-                                            <div className="flex items-start gap-3">
-                                                <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center flex-shrink-0">
-                                                    <span className="text-lg">⚠️</span>
+                                        <div className="mt-4 p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-500/30 backdrop-blur-sm relative overflow-hidden">
+                                            {/* Decorative glow */}
+                                            <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl" />
+
+                                            <div className="relative z-10">
+                                                <div className="flex items-start gap-4">
+                                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center flex-shrink-0 border border-amber-500/20">
+                                                        <span className="text-2xl">🌱</span>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <p className="text-sm font-semibold text-amber-400 mb-1">Not an IoT Command</p>
+                                                        <p className="text-sm text-gray-300 leading-relaxed">{error}</p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <p className="text-sm font-medium text-red-400">Compilation Error</p>
-                                                    <p className="text-xs text-red-400/70 mt-1">{error}</p>
+
+                                                {/* Suggestions */}
+                                                <div className="mt-4 pt-4 border-t border-amber-500/20">
+                                                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Try these examples:</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {[
+                                                            '🌡️ "Turn on fan if temp > 28°C"',
+                                                            '💧 "Irrigate when moisture < 30%"',
+                                                            '💡 "Lights on when dark"'
+                                                        ].map((example, idx) => (
+                                                            <button
+                                                                key={idx}
+                                                                onClick={() => {
+                                                                    const prompts = [
+                                                                        'Turn on the fan when temperature exceeds 28°C',
+                                                                        'Activate sprinkler when soil moisture drops below 30%',
+                                                                        'Turn on lights when light level is below 20%'
+                                                                    ];
+                                                                    setPrompt(prompts[idx]);
+                                                                    setStatus('idle');
+                                                                    setError('');
+                                                                }}
+                                                                className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 hover:bg-amber-500/20 hover:border-amber-500/30 transition-all"
+                                                            >
+                                                                {example}
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

@@ -19,7 +19,7 @@ OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'llama3')
 USE_OLLAMA = os.getenv('USE_OLLAMA', 'true').lower() == 'true'
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# Advanced System Prompt - More flexible and intelligent (il faut l'ameliorer )
+# Advanced System Prompt - More flexible and intelligent
 SYSTEM_PROMPT = """You are an expert IoT Automation Architect specializing in smart agriculture systems.
 
 Your task is to understand natural language commands about farm automation and extract structured data.
@@ -29,7 +29,20 @@ You must be FLEXIBLE and INTELLIGENT in understanding user intent, even with:
 - Informal language
 - Typos or abbreviations
 
-## IMPORTANT RULES:
+## CRITICAL: VALIDATE RELEVANCE FIRST
+Before extracting intent, you MUST check if the prompt is related to:
+- Smart agriculture / farming automation
+- IoT devices (sensors, actuators, sprinklers, fans, heaters, lights, pumps, alarms)
+- Environmental monitoring (temperature, humidity, moisture, light levels, water levels)
+- Device control (turn on/off, activate, monitor, alert)
+
+If the prompt is NOT related to agriculture/IoT automation (e.g., general questions, greetings, unrelated topics like weather, math, personal questions, coding questions, etc.), return:
+{
+    "is_valid": false,
+    "error_message": "This request is not related to agricultural IoT automation. Please describe an action for your smart farm, such as controlling sprinklers, fans, heaters, lights, or setting up sensor-based automation."
+}
+
+## IMPORTANT RULES (only if prompt is valid):
 1. ALWAYS infer the most logical device based on the sensor mentioned:
    - temperature → heater (if cold) or fan (if hot)
    - moisture/humidity → sprinkler or pump
@@ -56,7 +69,10 @@ You must be FLEXIBLE and INTELLIGENT in understanding user intent, even with:
    - "below 30%", "under 30", "< 30", "moins de 30" → threshold: 30
 
 ## OUTPUT FORMAT (JSON only):
+
+For VALID agriculture/IoT prompts:
 {
+    "is_valid": true,
     "action": "turn_on" | "turn_off" | "monitor" | "alert",
     "device": "sprinkler" | "fan" | "heater" | "light" | "pump" | "siren",
     "sensor": "temperature" | "humidity" | "moisture" | "light_level" | "water_level" | null,
@@ -67,19 +83,31 @@ You must be FLEXIBLE and INTELLIGENT in understanding user intent, even with:
     "interpretation": "<brief explanation of how you understood the command>"
 }
 
+For INVALID/unrelated prompts:
+{
+    "is_valid": false,
+    "error_message": "<helpful message explaining what Agri-Gen does and asking for a valid command>"
+}
+
 ## EXAMPLES:
 
 Input: "allumer le ventilateur si temp > 25"
-Output: {"action": "turn_on", "device": "fan", "sensor": "temperature", "condition": "above", "threshold": 25, "unit": "celsius", "confidence": 0.95, "interpretation": "French command to turn on fan when temperature exceeds 25°C"}
+Output: {"is_valid": true, "action": "turn_on", "device": "fan", "sensor": "temperature", "condition": "above", "threshold": 25, "unit": "celsius", "confidence": 0.95, "interpretation": "French command to turn on fan when temperature exceeds 25°C"}
 
 Input: "water plants when dry"
-Output: {"action": "turn_on", "device": "sprinkler", "sensor": "moisture", "condition": "below", "threshold": 30, "unit": "percent", "confidence": 0.8, "interpretation": "Interpreted 'dry' as low moisture, defaulted threshold to 30%"}
+Output: {"is_valid": true, "action": "turn_on", "device": "sprinkler", "sensor": "moisture", "condition": "below", "threshold": 30, "unit": "percent", "confidence": 0.8, "interpretation": "Interpreted 'dry' as low moisture, defaulted threshold to 30%"}
 
 Input: "its too hot"
-Output: {"action": "turn_on", "device": "fan", "sensor": "temperature", "condition": "above", "threshold": 28, "unit": "celsius", "confidence": 0.7, "interpretation": "Inferred fan activation for cooling, default threshold 28°C"}
+Output: {"is_valid": true, "action": "turn_on", "device": "fan", "sensor": "temperature", "condition": "above", "threshold": 28, "unit": "celsius", "confidence": 0.7, "interpretation": "Inferred fan activation for cooling, default threshold 28°C"}
 
-Input: "turn off everything"
-Output: {"action": "turn_off", "device": "fan", "sensor": null, "condition": null, "threshold": null, "unit": null, "confidence": 0.5, "interpretation": "Ambiguous command, defaulting to fan. User should specify device."}
+Input: "What is the weather today?"
+Output: {"is_valid": false, "error_message": "This request is not related to agricultural IoT automation. Please describe an action for your smart farm, such as controlling sprinklers, fans, heaters, lights, or setting up sensor-based automation."}
+
+Input: "Hello, how are you?"
+Output: {"is_valid": false, "error_message": "Hello! I'm Agri-Gen, an assistant for agricultural IoT automation. Try commands like 'turn on the fan when temperature exceeds 25°C' or 'activate irrigation when humidity drops below 30%'."}
+
+Input: "2 + 2 = ?"
+Output: {"is_valid": false, "error_message": "I specialize in agricultural IoT automation, not math calculations. Try commands like 'turn on lights when it gets dark' or 'activate heater when temperature drops below 15°C'."}
 
 RESPOND WITH JSON ONLY. NO MARKDOWN. NO EXPLANATIONS OUTSIDE JSON."""
 
@@ -158,6 +186,36 @@ def extract_with_fallback(prompt: str) -> dict:
     
     prompt_lower = prompt.lower()
     
+    # First check if the prompt contains ANY IoT-related keywords
+    all_iot_keywords = [
+        # Devices
+        "sprinkler", "arroseur", "irrigation", "fan", "ventilateur", "ventilo",
+        "heater", "chauffage", "radiateur", "light", "lumière", "lampe",
+        "siren", "sirène", "alarm", "alarme", "pump", "pompe",
+        # Sensors
+        "temperature", "temp", "température", "humidity", "humidité",
+        "moisture", "soil", "sol", "terre", "light level", "luminosity",
+        "water level", "niveau eau",
+        # Actions
+        "turn on", "turn off", "activate", "activer", "allumer", "éteindre",
+        "start", "stop", "enable", "disable", "monitor", "surveiller",
+        # Conditions
+        "hot", "cold", "chaud", "froid", "dry", "sec", "wet", "humide",
+        "bright", "dark", "sombre", "clair",
+        # Agriculture terms
+        "plant", "plante", "farm", "ferme", "greenhouse", "serre",
+        "garden", "jardin", "crop", "culture", "field", "champ"
+    ]
+    
+    has_iot_keyword = any(kw in prompt_lower for kw in all_iot_keywords)
+    
+    if not has_iot_keyword:
+        # No IoT keywords found - this is not a valid agriculture/IoT command
+        return {
+            "is_valid": False,
+            "error_message": "This request doesn't seem related to agricultural IoT automation. Please describe an action for your smart farm, such as controlling sprinklers, fans, heaters, or lights. Example: 'Turn on the fan when temperature exceeds 25°C'"
+        }
+    
     # Detect action (multi-language)
     action = "turn_on"
     off_keywords = ["turn off", "stop", "disable", "off", "éteindre", "arrêter", "désactiver", "apagar", "parar"]
@@ -220,7 +278,7 @@ def extract_with_fallback(prompt: str) -> dict:
         }
         device = sensor_device_map.get(sensor, "fan")
     
-    # Default device
+    # Default device if we have IoT context but no specific device
     if not device:
         device = "fan"
     
@@ -263,6 +321,7 @@ def extract_with_fallback(prompt: str) -> dict:
         unit = "percent"
     
     return {
+        "is_valid": True,
         "action": action,
         "device": device,
         "sensor": sensor,
