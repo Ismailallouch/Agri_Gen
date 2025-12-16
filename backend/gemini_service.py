@@ -242,8 +242,8 @@ def extract_with_fallback(prompt: str) -> dict:
         }
     
     # Split prompt into potential multiple commands
-    # Split by ' and ', ' et ', ' then ', ' puis ', ','
-    splitters = [" and ", " et ", " then ", " puis ", ","]
+    # Split by ' and ', ' et ', ' then ', ' puis ', ',', ' but ', ' mais '
+    splitters = [" and ", " et ", " then ", " puis ", ",", " but ", " mais "]
     
     # Normalize with temporary placeholder
     temp_prompt = prompt
@@ -254,10 +254,17 @@ def extract_with_fallback(prompt: str) -> dict:
     
     intents = []
     
+    last_action = "turn_on" # Default start
+    
     for sub_prompt in sub_prompts:
-        intent = parse_single_intent(sub_prompt)
+        # Pass the last seen action as default for this chunk
+        intent = parse_single_intent(sub_prompt, default_action=last_action)
         if intent:
             intents.append(intent)
+            # Update last_action for the next chunk if this one had a specific action detected
+            # We need to know if the action was EXPLICITLY in this chunk or just defaulted.
+            # Ideally parse_single_intent returns metadata, but for now let's just trust the result
+            last_action = intent['action']
             
     if not intents:
          return {
@@ -271,23 +278,34 @@ def extract_with_fallback(prompt: str) -> dict:
     }
 
 
-def parse_single_intent(prompt: str) -> dict:
+def parse_single_intent(prompt: str, default_action: str = "turn_on") -> dict:
     """Helper to parse a single command string"""
     prompt_lower = prompt.lower()
     
     # Detect action (multi-language)
-    action = "turn_on"
+    action = None
     off_keywords = ["turn off", "turn of", "stop", "disable", "off", "éteindre", "arrêter", "désactiver", "apagar", "parar"]
     monitor_keywords = ["monitor", "check", "surveiller", "vérifier", "verificar"]
-    
+    on_keywords = ["turn on", "start", "enable", "activate", "allumer", "activer"]
+
     for kw in off_keywords:
         if kw in prompt_lower:
             action = "turn_off"
             break
-    for kw in monitor_keywords:
-        if kw in prompt_lower:
-            action = "monitor"
-            break
+    if not action:
+        for kw in monitor_keywords:
+            if kw in prompt_lower:
+                action = "monitor"
+                break
+    if not action:
+        for kw in on_keywords:
+            if kw in prompt_lower:
+                action = "turn_on"
+                break
+            
+    # If no explicit action found, use the inherited default
+    if not action:
+        action = default_action
     
     # Detect device (multi-language with aliases)
     device_map = {

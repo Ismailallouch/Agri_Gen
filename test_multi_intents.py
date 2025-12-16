@@ -6,13 +6,12 @@ import json
 # Add backend to path
 sys.path.append(os.path.join(os.getcwd(), 'backend'))
 
-from gemini_service import extract_with_fallback, SYSTEM_PROMPT
-from firmware_compiler import compile_firmware
+from gemini_service import extract_with_fallback
 
-def test_compound_command():
-    print("Testing Compound Command with Typo...")
+def test_context_carryover():
+    print("Testing Context Carry-Over...")
     
-    prompt = "Turn on fan when too hot and turn of light"
+    prompt = "turn of light and fan and sprinkler"
     print(f"Prompt: {prompt}")
     
     intent = extract_with_fallback(prompt)
@@ -20,15 +19,31 @@ def test_compound_command():
     print("\nExtracted Intent:")
     print(json.dumps(intent, indent=2))
     
-    if not intent['is_valid'] or len(intent.get('intents', [])) < 2:
-        print("FAILED: Did not extract multiple intents.")
+    intents = intent.get('intents', [])
+    if len(intents) < 3:
+        print("FAILED: Did not extract 3 intents.")
         return
-        
-    intent2 = intent['intents'][1]
-    if intent2['action'] == 'turn_off' and intent2['device'] == 'light':
-        print("\nSUCCESS: 'turn of' correctly interpreted as 'turn_off' light.")
+
+    actions = [i['action'] for i in intents]
+    print(f"Actions found: {actions}")
+    
+    if all(a == 'turn_off' for a in actions):
+        print("\nSUCCESS: All actions are 'turn_off'.")
     else:
-        print(f"\nFAILED: 'turn of' interpreted as {intent2['action']} {intent2['device']}")
+        print("\nFAILED: Some actions defaulted incorrectly.")
+
+    # Test switching back to ON
+    print("\n\nTesting switching actions...")
+    prompt2 = "turn off light and fan but turn on sprinkler"
+    intent2 = extract_with_fallback(prompt2)
+    actions2 = [i['action'] for i in intent2.get('intents', [])]
+    print(f"Prompt: {prompt2}")
+    print(f"Actions: {actions2}")
+    
+    if actions2 == ['turn_off', 'turn_off', 'turn_on']:
+         print("SUCCESS: Context switched correctly.")
+    else:
+         print("FAILED: Context switch failed.")
 
 if __name__ == "__main__":
-    test_compound_command()
+    test_context_carryover()
