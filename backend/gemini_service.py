@@ -28,6 +28,7 @@ You must be FLEXIBLE and INTELLIGENT in understanding user intent, even with:
 - Different languages (English, French, Spanish, etc.)
 - Informal language
 - Typos or abbreviations
+- **Compound commands (e.g. "turn on fan AND turn off light")**
 
 ## CRITICAL: VALIDATE RELEVANCE FIRST
 Before extracting intent, you MUST check if the prompt is related to:
@@ -64,23 +65,32 @@ If the prompt is NOT related to agriculture/IoT automation (e.g., general questi
 4. Handle simple commands without conditions:
    - "Turn on the fan" → action: turn_on, device: fan, no condition
    - "Éteindre la lumière" → action: turn_off, device: light
+   - "Turn of the light" → action: turn_off (handle "turn of" as typo for "turn off")
 
-5. Extract threshold values from any format:
+5. EXTRACT MULTIPLE COMMANDS:
+   - Split compound sentences connected by "and", "et", "then", ",".
+   - Example: "Turn on fan AND turn off light" -> 2 intents.
+
+6. Extract threshold values from any format:
    - "below 30%", "under 30", "< 30", "moins de 30" → threshold: 30
 
 ## OUTPUT FORMAT (JSON only):
 
-For VALID agriculture/IoT prompts:
+For VALID agriculture/IoT prompts, return an object with an "intents" array:
 {
     "is_valid": true,
-    "action": "turn_on" | "turn_off" | "monitor" | "alert",
-    "device": "sprinkler" | "fan" | "heater" | "light" | "pump" | "siren",
-    "sensor": "temperature" | "humidity" | "moisture" | "light_level" | "water_level" | null,
-    "condition": "above" | "below" | "equals" | null,
-    "threshold": <number or null>,
-    "unit": "celsius" | "fahrenheit" | "percent" | null,
-    "confidence": <0.0 to 1.0>,
-    "interpretation": "<brief explanation of how you understood the command>"
+    "intents": [
+        {
+            "action": "turn_on" | "turn_off" | "monitor" | "alert",
+            "device": "sprinkler" | "fan" | "heater" | "light" | "pump" | "siren",
+            "sensor": "temperature" | "humidity" | "moisture" | "light_level" | "water_level" | null,
+            "condition": "above" | "below" | "equals" | null,
+            "threshold": <number or null>,
+            "unit": "celsius" | "fahrenheit" | "percent" | null,
+            "summary": "Turn on fan when temperature > 25"
+        },
+        ... (more intents if compound command)
+    ]
 }
 
 For INVALID/unrelated prompts:
@@ -91,23 +101,25 @@ For INVALID/unrelated prompts:
 
 ## EXAMPLES:
 
-Input: "allumer le ventilateur si temp > 25"
-Output: {"is_valid": true, "action": "turn_on", "device": "fan", "sensor": "temperature", "condition": "above", "threshold": 25, "unit": "celsius", "confidence": 0.95, "interpretation": "French command to turn on fan when temperature exceeds 25°C"}
+Input: "allumer le ventilateur si temp > 25 et éteindre la lumière"
+Output: {
+    "is_valid": true,
+    "intents": [
+        {"action": "turn_on", "device": "fan", "sensor": "temperature", "condition": "above", "threshold": 25, "unit": "celsius", "summary": "Turn on fan > 25C"},
+        {"action": "turn_off", "device": "light", "sensor": null, "condition": null, "threshold": null, "unit": null, "summary": "Turn off light"}
+    ]
+}
 
 Input: "water plants when dry"
-Output: {"is_valid": true, "action": "turn_on", "device": "sprinkler", "sensor": "moisture", "condition": "below", "threshold": 30, "unit": "percent", "confidence": 0.8, "interpretation": "Interpreted 'dry' as low moisture, defaulted threshold to 30%"}
-
-Input: "its too hot"
-Output: {"is_valid": true, "action": "turn_on", "device": "fan", "sensor": "temperature", "condition": "above", "threshold": 28, "unit": "celsius", "confidence": 0.7, "interpretation": "Inferred fan activation for cooling, default threshold 28°C"}
+Output: {
+    "is_valid": true,
+    "intents": [
+        {"action": "turn_on", "device": "sprinkler", "sensor": "moisture", "condition": "below", "threshold": 30, "unit": "percent", "summary": "Water when dry"}
+    ]
+}
 
 Input: "What is the weather today?"
-Output: {"is_valid": false, "error_message": "This request is not related to agricultural IoT automation. Please describe an action for your smart farm, such as controlling sprinklers, fans, heaters, lights, or setting up sensor-based automation."}
-
-Input: "Hello, how are you?"
-Output: {"is_valid": false, "error_message": "Hello! I'm Agri-Gen, an assistant for agricultural IoT automation. Try commands like 'turn on the fan when temperature exceeds 25°C' or 'activate irrigation when humidity drops below 30%'."}
-
-Input: "2 + 2 = ?"
-Output: {"is_valid": false, "error_message": "I specialize in agricultural IoT automation, not math calculations. Try commands like 'turn on lights when it gets dark' or 'activate heater when temperature drops below 15°C'."}
+Output: {"is_valid": false, "error_message": "This request is not related to agricultural IoT automation..."}
 
 RESPOND WITH JSON ONLY. NO MARKDOWN. NO EXPLANATIONS OUTSIDE JSON."""
 
@@ -131,9 +143,15 @@ def extract_with_ollama(prompt: str) -> dict:
             response_text = result.get('response', '')
             
             # Parse JSON from response
-            intent = json.loads(response_text)
-            print(f"[Ollama] Extracted: {intent}")
-            return intent
+            data = json.loads(response_text)
+            print(f"[Ollama] Extracted: {data}")
+            
+            # Backwards compatibility/normalization
+            if "intents" not in data and "action" in data:
+                # Converted old format to new format
+                data = {"is_valid": True, "intents": [data]}
+                
+            return data
         else:
             print(f"[Ollama] Error: {response.status_code}")
             return None
@@ -171,9 +189,14 @@ def extract_with_gemini(prompt: str) -> dict:
             f"{SYSTEM_PROMPT}\n\nUser command: {prompt}"
         )
         
-        intent = json.loads(response.text)
-        print(f"[Gemini] Extracted: {intent}")
-        return intent
+        data = json.loads(response.text)
+        print(f"[Gemini] Extracted: {data}")
+        
+        # Backwards compatibility
+        if "intents" not in data and "action" in data:
+            data = {"is_valid": True, "intents": [data]}
+            
+        return data
         
     except Exception as e:
         print(f"[Gemini] Error: {e}")
@@ -181,7 +204,10 @@ def extract_with_gemini(prompt: str) -> dict:
 
 
 def extract_with_fallback(prompt: str) -> dict:
-    """Intelligent keyword-based fallback parser with multi-language support"""
+    """
+    Intelligent keyword-based fallback parser with multi-language support.
+    Supports basic compound splitting by 'and', 'et', etc.
+    """
     print("[Fallback] Using intelligent keyword parser")
     
     prompt_lower = prompt.lower()
@@ -210,15 +236,48 @@ def extract_with_fallback(prompt: str) -> dict:
     has_iot_keyword = any(kw in prompt_lower for kw in all_iot_keywords)
     
     if not has_iot_keyword:
-        # No IoT keywords found - this is not a valid agriculture/IoT command
         return {
             "is_valid": False,
-            "error_message": "This request doesn't seem related to agricultural IoT automation. Please describe an action for your smart farm, such as controlling sprinklers, fans, heaters, or lights. Example: 'Turn on the fan when temperature exceeds 25°C'"
+            "error_message": "This request doesn't seem related to agricultural IoT automation. Please describe an action for your smart farm."
         }
+    
+    # Split prompt into potential multiple commands
+    # Split by ' and ', ' et ', ' then ', ' puis ', ','
+    splitters = [" and ", " et ", " then ", " puis ", ","]
+    
+    # Normalize with temporary placeholder
+    temp_prompt = prompt
+    for s in splitters:
+        temp_prompt = temp_prompt.replace(s, " ||| ")
+    
+    sub_prompts = [p.strip() for p in temp_prompt.split(" ||| ") if p.strip()]
+    
+    intents = []
+    
+    for sub_prompt in sub_prompts:
+        intent = parse_single_intent(sub_prompt)
+        if intent:
+            intents.append(intent)
+            
+    if not intents:
+         return {
+            "is_valid": False,
+            "error_message": "Could not understand commands."
+        }
+        
+    return {
+        "is_valid": True,
+        "intents": intents
+    }
+
+
+def parse_single_intent(prompt: str) -> dict:
+    """Helper to parse a single command string"""
+    prompt_lower = prompt.lower()
     
     # Detect action (multi-language)
     action = "turn_on"
-    off_keywords = ["turn off", "stop", "disable", "off", "éteindre", "arrêter", "désactiver", "apagar", "parar"]
+    off_keywords = ["turn off", "turn of", "stop", "disable", "off", "éteindre", "arrêter", "désactiver", "apagar", "parar"]
     monitor_keywords = ["monitor", "check", "surveiller", "vérifier", "verificar"]
     
     for kw in off_keywords:
@@ -280,7 +339,10 @@ def extract_with_fallback(prompt: str) -> dict:
     
     # Default device if we have IoT context but no specific device
     if not device:
-        device = "fan"
+        # If we can't find a device, this single intent might just be noise or "and", skip it
+        # But for fallback we'll default to fan to be safe? 
+        # Better: return None if essentially empty/nonsense
+        return None
     
     # Detect condition
     condition = None
@@ -321,15 +383,12 @@ def extract_with_fallback(prompt: str) -> dict:
         unit = "percent"
     
     return {
-        "is_valid": True,
         "action": action,
         "device": device,
         "sensor": sensor,
         "condition": condition,
         "threshold": threshold,
-        "unit": unit,
-        "confidence": 0.6,
-        "interpretation": f"Parsed using keyword matching: {action} {device}" + (f" when {sensor} {condition} {threshold}" if condition else "")
+        "unit": unit
     }
 
 
@@ -338,29 +397,24 @@ def extract_intent(prompt: str) -> dict:
     Extract structured IoT intent from natural language.
     Uses a cascade: Ollama → Gemini → Intelligent Fallback
     """
-    intent = None
+    result = None
     
     # Try Ollama first (local, free)
     if USE_OLLAMA:
         print("[AI Service] Trying Ollama...")
-        intent = extract_with_ollama(prompt)
+        result = extract_with_ollama(prompt)
     
     # Try Gemini as fallback
-    if not intent and GEMINI_API_KEY:
+    if not result and GEMINI_API_KEY:
         print("[AI Service] Trying Gemini...")
-        intent = extract_with_gemini(prompt)
+        result = extract_with_gemini(prompt)
     
     # Use intelligent fallback
-    if not intent:
+    if not result:
         print("[AI Service] Using intelligent fallback...")
-        intent = extract_with_fallback(prompt)
+        result = extract_with_fallback(prompt)
     
-    # Remove fields we don't need for compilation
-    if intent:
-        intent.pop('confidence', None)
-        intent.pop('interpretation', None)
-    
-    return intent
+    return result
 
 
 if __name__ == "__main__":

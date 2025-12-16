@@ -29,13 +29,13 @@ def get_template_dir():
     return os.path.join(os.path.dirname(__file__), 'templates')
 
 
-def compile_firmware(intent: dict) -> str:
+def compile_firmware(data: dict) -> str:
     """
-    Compile structured intent into Python firmware code
+    Compile structured intent(s) into Python firmware code
     
     Args:
-        intent: Structured IoT intent from AI
-                {action, device, sensor, condition, threshold, unit}
+        data: structured data from AI service.
+              Format: { "is_valid": true, "intents": [ ... ] }
     
     Returns:
         str: Generated Python firmware code for Cisco Packet Tracer SBC
@@ -49,27 +49,63 @@ def compile_firmware(intent: dict) -> str:
     
     template = env.get_template('iot_master.py.jinja')
     
-    # Map device and sensor to GPIO pins (with safe defaults)
-    device = (intent.get('device') or 'fan').lower()
-    sensor = intent.get('sensor')
-    if sensor:
-        sensor = sensor.lower()
+    # Normalize input to list of intents
+    intents = data.get('intents', [])
+    if not intents and 'action' in data:
+        # Fallback for old single-intent format if needed
+        intents = [data]
+        
+    # Process all intents to identify used devices and sensors
+    rules = []
+    used_devices = set()
+    used_sensors = set()
     
-    device_pin = DEVICE_PIN_MAP.get(device, 5)  # Default to fan (pin 5)
-    sensor_pin = SENSOR_PIN_MAP.get(sensor, 0) if sensor else None
+    for intent in intents:
+        device = (intent.get('device') or 'fan').lower()
+        sensor = intent.get('sensor')
+        if sensor:
+            sensor = sensor.lower()
+            used_sensors.add(sensor)
+            
+        used_devices.add(device)
+        
+        # Determine pins
+        device_pin = DEVICE_PIN_MAP.get(device, 5)
+        sensor_pin = SENSOR_PIN_MAP.get(sensor, 0) if sensor else None
+        
+        rules.append({
+            'action': intent.get('action', 'turn_on'),
+            'device': device,
+            'device_pin': device_pin,
+            'sensor': sensor,
+            'sensor_pin': sensor_pin,
+            'condition': intent.get('condition'),
+            'threshold': intent.get('threshold'),
+            'unit': intent.get('unit'),
+            'has_condition': intent.get('condition') is not None and intent.get('threshold') is not None
+        })
     
+    # Unique lists for pin definitions
+    unique_devices = []
+    for device in used_devices:
+        unique_devices.append({
+            'name': device,
+            'pin': DEVICE_PIN_MAP.get(device, 5)
+        })
+        
+    unique_sensors = []
+    for sensor in used_sensors:
+        unique_sensors.append({
+            'name': sensor,
+            'pin': SENSOR_PIN_MAP.get(sensor, 0)
+        })
+
     # Prepare template context
     context = {
-        'action': intent.get('action', 'turn_on'),
-        'device': device,
-        'device_pin': device_pin,
-        'sensor': sensor,
-        'sensor_pin': sensor_pin,
-        'condition': intent.get('condition'),
-        'threshold': intent.get('threshold'),
-        'unit': intent.get('unit'),
+        'rules': rules,
+        'devices': unique_devices,
+        'sensors': unique_sensors,
         'lcd_pin': LCD_PIN,
-        'has_condition': intent.get('condition') is not None and intent.get('threshold') is not None
     }
     
     firmware_code = template.render(**context)

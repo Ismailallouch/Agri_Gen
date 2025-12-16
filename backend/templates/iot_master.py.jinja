@@ -2,128 +2,111 @@
 # Agri-Gen IoT Firmware
 # Auto-generated for Cisco Packet Tracer SBC
 # ============================================================
-# Device: {{ device | upper }}
-# Action: {{ action }}
-{% if has_condition %}
-# Condition: {{ sensor }} {{ condition }} {{ threshold }}{{ unit }}
-{% endif %}
+# Multi-Intent Firmware
+# Rules Count: {{ rules|length }}
 # ============================================================
 
 from gpio import *
 from time import *
 
 # -------------------- PIN CONFIGURATION --------------------
-# Sensors
+# Standard Map
 PIN_TEMP = 0
 PIN_WATER = 1
 PIN_HUMID = 2
-
-# Actuators
 PIN_SPRINKLER = 3
 PIN_HEATER = 4
 PIN_FAN = 5
 PIN_SIREN = 6
 PIN_LIGHT = 7
-PIN_LCD = 8
+PIN_LCD = {{ lcd_pin }}
 
-# Active pins for this script
-DEVICE_PIN = {{ device_pin }}  # {{ device | capitalize }}
-{% if sensor_pin is not none %}
-SENSOR_PIN = {{ sensor_pin }}  # {{ sensor | capitalize }} Sensor
-{% endif %}
+# Active Devices
+{% for dev in devices %}
+PIN_{{ dev.name | upper }} = {{ dev.pin }}
+{% endfor %}
 
-# -------------------- THRESHOLD SETTINGS --------------------
-{% if has_condition %}
-THRESHOLD = {{ threshold }}
-CHECK_INTERVAL = 2  # seconds between readings
-{% endif %}
+# Active Sensors
+{% for sens in sensors %}
+PIN_{{ sens.name | upper }} = {{ sens.pin }}
+{% endfor %}
 
 # -------------------- HELPER FUNCTIONS --------------------
-def read_sensor():
-    """Read value from {{ sensor if sensor else 'sensor' }}"""
-{% if sensor_pin is not none %}
-    value = analogRead(SENSOR_PIN)
-    return value
-{% else %}
+def read_sensor(sensor_name, pin):
+    """Read value from sensor"""
+    if pin is not None:
+        return analogRead(pin)
     return 0
-{% endif %}
 
-def control_device(state):
-    """Control {{ device }} - ON (1) or OFF (0)"""
+def control_device(device_name, pin, state):
+    """Control device - ON (1) or OFF (0)"""
     if state:
-        customWrite(DEVICE_PIN, 1)
-        customWrite(PIN_LCD, "{{ device | upper }}: ON")
-        print("[{{ device | upper }}] Turned ON")
+        customWrite(pin, 1)
+        print("[" + device_name.upper() + "] Turned ON")
     else:
-        customWrite(DEVICE_PIN, 0)
-        customWrite(PIN_LCD, "{{ device | upper }}: OFF")
-        print("[{{ device | upper }}] Turned OFF")
+        customWrite(pin, 0)
+        print("[" + device_name.upper() + "] Turned OFF")
 
-def display_status(sensor_value):
-    """Display current status on LCD"""
-    msg = "{{ sensor | capitalize if sensor else 'Value' }}: " + str(sensor_value)
-    customWrite(PIN_LCD, msg)
+def update_lcd(message):
+    """Write to LCD"""
+    customWrite(PIN_LCD, message)
 
 # -------------------- MAIN CONTROL LOOP --------------------
 def main():
     """Main firmware loop"""
-    print("[Agri-Gen] Starting {{ device | capitalize }} controller...")
-    print("[Agri-Gen] Device Pin: " + str(DEVICE_PIN))
-{% if sensor_pin is not none %}
-    print("[Agri-Gen] Sensor Pin: " + str(SENSOR_PIN))
-{% endif %}
+    print("[Agri-Gen] Starting Multi-Device Controller...")
     
-{% if has_condition %}
-    # Conditional control based on {{ sensor }} sensor
     while True:
-        # Read sensor value
-        sensor_value = read_sensor()
-        print("[Sensor] {{ sensor | capitalize }}: " + str(sensor_value))
+        # Loop through all rules
+        {% for rule in rules %}
+        print("--- Processing Rule: {{ rule.device }} ---")
         
-        # Check condition and control device
-        {% if condition == 'below' %}
-        if sensor_value < THRESHOLD:
-            print("[Action] {{ sensor | capitalize }} (" + str(sensor_value) + ") < " + str(THRESHOLD) + " -> ON")
-            control_device(1)
+        # Rule for {{ rule.device }}
+        {% if rule.has_condition %}
+        # Check {{ rule.sensor }}
+        val_{{ loop.index }} = read_sensor("{{ rule.sensor }}", {{ rule.sensor_pin }})
+        print("[Sensor] {{ rule.sensor }}: " + str(val_{{ loop.index }}))
+        
+        {% if rule.condition == 'below' %}
+        if val_{{ loop.index }} < {{ rule.threshold }}:
+            control_device("{{ rule.device }}", {{ rule.device_pin }}, 1)
+            update_lcd("{{ rule.device|upper }}: ON")
         else:
-            print("[Action] {{ sensor | capitalize }} (" + str(sensor_value) + ") >= " + str(THRESHOLD) + " -> OFF")
-            control_device(0)
-        {% elif condition == 'above' %}
-        if sensor_value > THRESHOLD:
-            print("[Action] {{ sensor | capitalize }} (" + str(sensor_value) + ") > " + str(THRESHOLD) + " -> ON")
-            control_device(1)
+            control_device("{{ rule.device }}", {{ rule.device_pin }}, 0)
+        {% elif rule.condition == 'above' %}
+        if val_{{ loop.index }} > {{ rule.threshold }}:
+            control_device("{{ rule.device }}", {{ rule.device_pin }}, 1)
+            update_lcd("{{ rule.device|upper }}: ON")
         else:
-            print("[Action] {{ sensor | capitalize }} (" + str(sensor_value) + ") <= " + str(THRESHOLD) + " -> OFF")
-            control_device(0)
+            control_device("{{ rule.device }}", {{ rule.device_pin }}, 0)
         {% else %}
-        if sensor_value == THRESHOLD:
-            control_device(1)
+        if val_{{ loop.index }} == {{ rule.threshold }}:
+            control_device("{{ rule.device }}", {{ rule.device_pin }}, 1)
         else:
-            control_device(0)
+            control_device("{{ rule.device }}", {{ rule.device_pin }}, 0)
         {% endif %}
         
-        # Update display
-        display_status(sensor_value)
+        {% else %}
+        # Direct Action
+        {% if rule.action == 'turn_on' %}
+        control_device("{{ rule.device }}", {{ rule.device_pin }}, 1)
+        update_lcd("{{ rule.device|upper }}: ON")
+        {% elif rule.action == 'turn_off' %}
+        control_device("{{ rule.device }}", {{ rule.device_pin }}, 0)
+        update_lcd("{{ rule.device|upper }}: OFF")
+        {% else %}
+        # Monitor only
+        val_{{ loop.index }} = read_sensor("{{ rule.sensor }}", {{ rule.sensor_pin if rule.sensor_pin else 0 }})
+        print("Monitoring {{ rule.device }}: " + str(val_{{ loop.index }}))
+        {% endif %}
+        {% endif %}
         
-        # Wait before next reading
-        delay(CHECK_INTERVAL * 1000)
-{% else %}
-    # Direct control without condition
-    {% if action == 'turn_on' %}
-    print("[Action] Turning ON {{ device }}")
-    control_device(1)
-    {% elif action == 'turn_off' %}
-    print("[Action] Turning OFF {{ device }}")
-    control_device(0)
-    {% else %}
-    # Monitor mode
-    print("[Action] Monitoring {{ device }}")
-    while True:
-        sensor_value = read_sensor()
-        display_status(sensor_value)
+        # Small delay between rules to avoid flooding
+        delay(500)
+        {% endfor %}
+        
+        print("--- Cycle Complete ---\n")
         delay(2000)
-    {% endif %}
-{% endif %}
 
 # -------------------- ENTRY POINT --------------------
 if __name__ == "__main__":

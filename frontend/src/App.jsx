@@ -490,15 +490,44 @@ Examples:
                                             Extracted Intent
                                         </h3>
                                     </div>
-                                    <div className="intent-grid">
-                                        {Object.entries(intent).map(([key, value]) => (
-                                            value !== null && (
-                                                <div key={key} className="intent-card">
-                                                    <p className="intent-label">{key}</p>
-                                                    <p className="intent-value">{String(value)}</p>
+                                    <div className="flex flex-col gap-4">
+                                        {intent.intents ? (
+                                            // New Multi-Intent Format
+                                            intent.intents.map((subIntent, idx) => (
+                                                <div key={idx} className="p-4 rounded-xl bg-white/5 border border-white/10">
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                        <div className="w-6 h-6 rounded-full bg-bio-300/20 flex items-center justify-center text-xs font-bold text-bio-300">
+                                                            {idx + 1}
+                                                        </div>
+                                                        <span className="text-sm font-medium text-white/80">
+                                                            {subIntent.summary || `Action ${idx + 1}`}
+                                                        </span>
+                                                    </div>
+                                                    <div className="intent-grid">
+                                                        {Object.entries(subIntent).map(([key, value]) => (
+                                                            value !== null && key !== 'summary' && (
+                                                                <div key={key} className="intent-card">
+                                                                    <p className="intent-label">{key}</p>
+                                                                    <p className="intent-value">{String(value)}</p>
+                                                                </div>
+                                                            )
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            )
-                                        ))}
+                                            ))
+                                        ) : (
+                                            // Fallback for old single-intent format or other keys
+                                            <div className="intent-grid">
+                                                {Object.entries(intent).map(([key, value]) => (
+                                                    value !== null && key !== 'is_valid' && (
+                                                        <div key={key} className="intent-card">
+                                                            <p className="intent-label">{key}</p>
+                                                            <p className="intent-value">{String(value)}</p>
+                                                        </div>
+                                                    )
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}

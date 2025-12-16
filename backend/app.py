@@ -59,6 +59,7 @@ def compile_endpoint():
             }), 400
         
         # Step 3: Compile Python firmware using Jinja2
+        # Now supporting multi-intent structure
         firmware_code = compile_firmware(intent)
         
         return jsonify({
