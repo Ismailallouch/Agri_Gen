@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Zap, Loader2, Cpu, Sprout, Terminal, ChevronRight, History, Bookmark, Trash2, RotateCcw } from 'lucide-react'
+import { Zap, Loader2, Cpu, Sprout, Terminal, ChevronRight, History, Bookmark, Trash2, RotateCcw,Download  } from 'lucide-react'
 import CodeDisplay from './components/CodeDisplay'
 
 // Professional preset templates
@@ -74,6 +74,13 @@ function App() {
         setHistory([])
         localStorage.removeItem('agrigen_history')
     }
+    const downloadFile = () => {
+      const link = document.createElement("a");
+      link.href = "https://res.cloudinary.com/dqfpaqz2z/raw/upload/v1767278492/Projet_cisco_2_dsvpy7.pkt";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    };
 
     const loadFromHistory = (entry) => {
         setPrompt(entry.prompt)
@@ -143,6 +150,18 @@ function App() {
                     {/* Header Actions */}
                     <div className="flex items-center gap-3">
                         <button
+                            onClick={downloadFile}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${showHistory ? 'bg-data-500/20 border-data-500/50 text-data-400' : 'bg-transparent border-glass-border text-gray-400 hover:text-data-400 hover:border-data-500/30'}`}
+                        >
+                            <Download className="w-4 h-4" />
+                            <span className="hidden sm:inline">Cisco Template</span>
+                            {history.length > 0 && (
+                                <span className="w-5 h-5 rounded-full bg-data-500/30 text-xs flex items-center justify-center">
+                                    {history.length}
+                                </span>
+                            )}
+                        </button> 
+                        <button
                             onClick={() => setShowPresets(!showPresets)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${showPresets ? 'bg-bio-300/20 border-bio-300/50 text-bio-300' : 'bg-transparent border-glass-border text-gray-400 hover:text-bio-300 hover:border-bio-300/30'}`}
                         >
@@ -161,6 +180,7 @@ function App() {
                                 </span>
                             )}
                         </button>
+                       
                     </div>
                 </header>
 
